@@ -1,0 +1,126 @@
+# PraxiaOne / Praxia5Chronic Project Walkthrough
+
+Welcome to the **PraxiaOne** (also tracked as Praxia5Chronic) project! This platform is a next-generation, AI-driven personalized wellness and chronic disease management system. 
+
+Here is a comprehensive breakdown of the project architecture, features, and the work that has been completed so far.
+
+---
+
+## 🏗️ Technology Stack
+
+The project is built on a modern, robust, and full-stack architecture designed for asynchronous processing and AI integration.
+
+### **Frontend (User Interface)**
+- **Framework:** Next.js 16 (App Router with Turbopack)
+- **Styling & Components:** Material UI (MUI)
+- **Language:** TypeScript
+- **State Management:** React Hooks
+- **Communication:** Custom `fetch` wrapper with automatic JWT token refresh ([lib/api.ts](file:///f:/PrimeNumerics/ProjectAssignment/praxiaone3/frontend/lib/api.ts)).
+
+### **Backend (Core API & Data)**
+- **Framework:** Django (4.2.8) & Django REST Framework (DRF)
+- **Database:** MySQL 8.0 (Relational Data)
+- **Task Queue:** Celery with Redis (Message Broker) for asynchronous background jobs.
+- **Authentication:** JSON Web Tokens (JWT)
+- **Monitoring:** Prometheus & Grafana integrations.
+
+### **AI & Data Pipelines (AutoRAG Engine)**
+- **Vector Database:** Qdrant (Runs on port 6333)
+- **Embeddings:** `sentence-transformers` (`all-MiniLM-L6-v2`)
+- **RAG Engine:** Custom built `praxia5_autorag` engine that adaptively chunks text, vectors it into Qdrant, and retrieves evidence with confidence and grounding validation.
+- **LLM Provider:** Supports OpenAI (`gpt-4o-mini`) but gracefully falls back to a built-in static mock system if no API key is provided.
+
+---
+
+## 🛠️ What Has Been Implemented So Far?
+
+The backend and frontend foundations are entirely connected and functioning. Here is a breakdown of the major modules built:
+
+### 1. **Core Features & Health Logging (`core` App)**
+- **User Authentication:** Registration, Login, and JWT session handling.
+- **User Profiles & Consent:** Tracks user stats (age, height, weight) and explicitly manages dynamic consent bounds. (e.g., users can revoke AI access to their lab results).
+- **Goal Tracking:** Weekly wellness goals and target weight tracking with visual progress metrics.
+- **Document Management:** Secure uploading of Lab Results and Care Plans. Documents are automatically parsed and embedded into the Qdrant Vector DB for the AI to read.
+
+### 2. **Chronic Disease Management (`chronic_mgmt` App)**
+- **Disease Tracking:** Support for 10 US Chronic Diseases (e.g. Type 2 Diabetes, Hypertension).
+- **Care Plans & Medications:** Tracks active medication adherence and long-term care goals.
+- **Risk Assessments & Alerts:** Evaluates user data and creates dynamic alert thresholds and risk scores.
+
+### 3. **Medical Integrations (`fhir_integration` App)**
+- **FHIR R4 Standard:** Fully equipped to communicate with major electronic health record (EHR) systems like EPIC and Cerner.
+- **Background Syncing:** Celery workers pull down new patient observations and conditions asynchronously without blocking the user interface.
+
+### 4. **Wearable Integrations (`data_sources` App)**
+- **Device Support:** Ingests live payloads from Apple Health, Google Fit, and Fitbit.
+- **Metrics Tracking:** Logs heart rates, blood glucose, sleep, and steps into the unified system.
+
+### 5. **Health AI Chat (`praxia5_autorag`)**
+- Features a sophisticated Retrieval-Augmented Generation (RAG) system.
+- **Consent-Aware Context:** The AI checks what data the user has consented to sharing (vitals, labs, metadata) and dynamically restricts its context window to respect privacy.
+- **Grounding Score System:** Validates whether the LLM is hallucinating answers or using real evidence retrieved from Qdrant.
+- **Fallback Capability:** As recently configured, if your `OPENAI_API_KEY` is not present, the system defaults to conversational keyword fallbacks so the application remains operable.
+
+---
+
+## 🚀 The Execution Pipeline (How it runs locally)
+
+Currently, the project runs as a hybrid setup on your Windows machine:
+
+1. **MySQL Daemon:** Your local `mysqld` service handles the primary relational data. 
+2. **Docker Containers:**
+   - `qdrant`: Stores the vectorized medical documents and interactions.
+   - `redis_praxia`: Acts as the task broker for background queueing.
+3. **Django Dev Server:** (`python manage.py runserver`) Serves the API endpoints on port `8000`.
+4. **Celery Solo Worker:** (`celery -A praxiaone worker --pool=solo`) Sits in the background listening to Redis and processing FHIR payloads, heavy document indexing, and AI embeddings.
+5. **Next.js Dev Server:** (`npm run dev`) Hosts the user-facing web dashboard on port `3000`.
+
+---
+
+## 🔜 Next Steps / Missing Pieces
+
+While the foundation is extremely solid, to take it to the next level you will likely want to:
+
+1. **Provide an OpenAI API Key:** Put a real `sk-xxx` key inside [backend/.env](file:///f:/PrimeNumerics/ProjectAssignment/praxiaone3/backend/.env) to unlock the full generative capability of the RAG engine.
+2. **Dockerize the entire stack:** A [docker-compose.yml](file:///f:/PrimeNumerics/ProjectAssignment/praxiaone3/docker-compose.yml) file exists, but port conflicts currently prevent it from orchestrating smoothly. This can be refined.
+3. **Production Deployment:** Shift the SQLite/Development setups towards HTTPS, WebSockets (for live chat typing), and secure Secret Management for a full launch.
+
+---
+
+## 📂 Project Folder Structure
+
+Here is a high-level overview of where everything lives in the `praxiaone3` workspace:
+
+```text
+f:/PrimeNumerics/ProjectAssignment/praxiaone3/
+│
+├── frontend/               # ⚡ Next.js Frontend App
+│   ├── app/                # Next.js App Router definitions (Pages layout)
+│   ├── components/         # Reusable React/MUI components
+│   ├── hooks/              # Custom React hooks
+│   ├── lib/                # Shared utilities (api.ts for fetch wrapping)
+│   ├── public/             # Static assets (images, SVGs)
+│   ├── theme/              # MUI theming definitions
+│   └── package.json        # Node dependencies & scripts
+│
+├── backend/                # 🐘 Django Backend App
+│   ├── praxiaone/          # Django core settings (urls, settings, celery init)
+│   ├── core/               # Base models, auth, Document upload, health chat API
+│   ├── chronic_mgmt/       # 10 Chronic Disease Models, risk scoring & goals API
+│   ├── data_sources/       # Wearables (Apple Health, Fitbit) ingestion API
+│   ├── fhir_integration/   # EHR observation and conditions async puller
+│   ├── requirements.txt    # Python dependencies
+│   └── manage.py           # Django execution script
+│
+├── ai/                     # 🧠 Standalone AI AutoRAG Sub-Package
+│   └── praxia5_autorag/    # RAG pipeline logic
+│       ├── chunking/       # Adaptive text chunking
+│       ├── embedding/      # Sentence-transformers implementations
+│       ├── grounding/      # Evidence verification & source validation
+│       ├── llm/            # LLM interface clients (router, base, dummy)
+│       └── retrieval/      # Qdrant VectorStore bindings
+│
+├── docker-compose.yml      # 🐳 Production/sandbox orchestration architecture
+├── IMPLEMENTATION_STATUS.md# Deep dive on completed tasks & model breakdowns
+└── QUICK_START_WINDOWS.md  # Detailed CLI launch commands & powershell scripts
+```

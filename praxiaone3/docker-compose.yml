@@ -1,0 +1,100 @@
+version: '3.8'
+
+services:
+  # ----------------------------------------------------
+  # 1. DATABASE LAYER
+  # ----------------------------------------------------
+  db:
+    image: mysql:8.0
+    restart: always
+    environment:
+      MYSQL_DATABASE: praxiaone3
+      MYSQL_USER: praxiaone3_user
+      MYSQL_PASSWORD: StrongPass@123
+      MYSQL_ROOT_PASSWORD: RootStrongPass@123
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_storage:/qdrant/storage
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_storage:/root/.ollama
+    # ----------------------------------------------------------------------------------
+    # NVIDIA GPU ACCELERATION (OPTIONAL)
+    # If the server has an Nvidia GPU, uncomment the block below to enable faster AI!
+    # ----------------------------------------------------------------------------------
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+    # ----------------------------------------------------------------------------------
+
+  # ----------------------------------------------------
+  # 2. BACKEND LAYER (Django API + RAG Engine)
+  # ----------------------------------------------------
+  backend:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: always
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+      - redis
+      - qdrant
+      - ollama
+    environment:
+      # Map connections directly to the companion Docker containers!
+      - DJANGO_ALLOWED_HOSTS=127.0.0.1,localhost,backend,frontend,*
+      - MYSQL_HOST=db
+      - MYSQL_PORT=3306
+      - MYSQL_DATABASE=praxiaone3
+      - MYSQL_USER=praxiaone3_user
+      - MYSQL_PASSWORD=StrongPass@123
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - QDRANT_URL=http://qdrant:6333
+      - OLLAMA_URL=http://ollama:11434
+    command: >
+      sh -c "python manage.py migrate && python manage.py runserver 0.0.0.0:8000"
+
+  # ----------------------------------------------------
+  # 3. FRONTEND LAYER (React Next.js UI)
+  # ----------------------------------------------------
+  frontend:
+    build: 
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: always
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    environment:
+      # Tell Next.js where the Django API is located 
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+
+volumes:
+  mysql_data:
+  qdrant_storage:
+  ollama_storage:
